@@ -27,12 +27,19 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.widget.Toast;
 import com.google.ar.core.Anchor;
+import com.google.ar.core.Frame;
 import com.google.ar.core.HitResult;
 import com.google.ar.core.Plane;
+import com.google.ar.core.PointCloud;
 import com.google.ar.sceneform.AnchorNode;
+import com.google.ar.sceneform.FrameTime;
+import com.google.ar.sceneform.Scene;
 import com.google.ar.sceneform.rendering.ModelRenderable;
 import com.google.ar.sceneform.ux.ArFragment;
 import com.google.ar.sceneform.ux.TransformableNode;
+
+import com.google.ar.sceneform.samples.hellosceneform.PointCloudNode;
+
 
 /**
  * This is an example activity that uses the Sceneform UX package to make common AR tasks easier.
@@ -43,8 +50,10 @@ public class HelloSceneformActivity extends AppCompatActivity {
 
   private ArFragment arFragment;
   private ModelRenderable andyRenderable;
+  private PointCloudNode pointCloudNode;
 
-  @Override
+
+    @Override
   @SuppressWarnings({"AndroidApiChecker", "FutureReturnValueIgnored"})
   // CompletableFuture requires api level 24
   // FutureReturnValueIgnored is not valid
@@ -57,6 +66,12 @@ public class HelloSceneformActivity extends AppCompatActivity {
 
     setContentView(R.layout.activity_ux);
     arFragment = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.ux_fragment);
+
+    Scene scene = arFragment.getArSceneView().getScene();
+    scene.addOnUpdateListener(this::onFrame);
+
+        pointCloudNode = new PointCloudNode(this);
+    scene.addChild(pointCloudNode);
 
     // When you build a Renderable, Sceneform loads its resources in the background while returning
     // a CompletableFuture. Call thenAccept(), handle(), or check isDone() before calling get().
@@ -92,6 +107,19 @@ public class HelloSceneformActivity extends AppCompatActivity {
         });
   }
 
+  protected void onFrame(FrameTime frameTime) {
+      arFragment.onUpdate(frameTime);
+      Frame frame = arFragment.getArSceneView().getArFrame();
+      if (frame == null) {
+          return;
+      }
+
+      PointCloud pointCloud = frame.acquirePointCloud();
+      Log.i(TAG, pointCloud.getPoints().toString());
+      pointCloudNode.update(pointCloud);
+
+      pointCloud.release();
+  }
   /**
    * Returns false and displays an error message if Sceneform can not run, true if Sceneform can run
    * on this device.
