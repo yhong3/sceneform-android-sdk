@@ -38,6 +38,7 @@ import java.util.stream.Stream;
 
 /** Renders the ARCore point cloud as a Node. */
 public class PointCloudNode extends Node {
+
     private long timestamp;
     private Vertex[] ptbuffer;
     private int[] indexbuffer;
