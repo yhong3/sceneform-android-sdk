@@ -31,6 +31,11 @@ import com.google.ar.sceneform.rendering.RenderableDefinition;
 import com.google.ar.sceneform.rendering.Vertex;
 
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -43,9 +48,11 @@ public class PointCloudNode extends Node {
     private Vertex[] ptbuffer;
     private int[] indexbuffer;
     private static final String TAG = HelloSceneformActivity.class.getSimpleName();
-
-
     private CompletableFuture<Material> materialHolder;
+
+    // hold a featurepoint history
+    private Map<Integer, List<Float>> allFeaturePoints = new HashMap<>();
+
 
     // This is the extent of the point
     private static final float POINT_DELTA = 0.003f;
@@ -61,6 +68,7 @@ public class PointCloudNode extends Node {
 
     /**
      * Update the renderable for the point cloud. This creates a small quad for each feature point.
+     * use per mesh instead of submesh to achieve different color
      *
      * @param cloud the ARCore point cloud.
      */
@@ -72,12 +80,14 @@ public class PointCloudNode extends Node {
         }
         // If this is the same cloud as last time, skip it.  Also, if the material has not loaded yet,
         // skip this.
+        //TT maybe need to update even for same cloud
         if (this.timestamp != cloud.getTimestamp() && materialHolder.getNow(null) != null) {
             timestamp = cloud.getTimestamp();
-            FloatBuffer buf = cloud.getPoints();
+            FloatBuffer floatBuffer = cloud.getPoints();
+            IntBuffer idBuffer = cloud.getIds();
 
             // Point clouds are 4 values x,y,z and a confidence value.
-            int numFeatures = buf.limit() / 4;
+            int numFeatures = floatBuffer.limit() / 4;
 
             // no features in the cloud
             if (numFeatures < 1) {
@@ -103,6 +113,8 @@ public class PointCloudNode extends Node {
                 indexbuffer = new int[numIndices];
             }
 
+            Float confidence = 0.0f;
+            Float attention = 0.0f;
             Vector3 feature = new Vector3();
             Vector3[] p = {new Vector3(), new Vector3(), new Vector3(), new Vector3()};
             Vertex.UvCoordinate uv0 = new Vertex.UvCoordinate(0,0);
@@ -112,11 +124,25 @@ public class PointCloudNode extends Node {
             Vector3 normal3 = new Vector3(0,1,0);
 
             // Point cloud data is 4 floats per feature, {x,y,z,confidence}
-            for (int i = 0; i < buf.limit() / 4; i++) {
+            // loop through each points
+            for (int i = 0; i < floatBuffer.limit() / 4; i++) {
                 // feature point
-                feature.x = buf.get(i * 4);
-                feature.y = buf.get(i * 4 + 1);
-                feature.z = buf.get(i * 4 + 2);
+                feature.x = floatBuffer.get(i * 4);
+                feature.y = floatBuffer.get(i * 4 + 1);
+                feature.z = floatBuffer.get(i * 4 + 2);
+                confidence = floatBuffer.get(i * 4 + 3);
+
+                // process each point into global one
+                Integer currentId = idBuffer.get(i);
+                if (allFeaturePoints.containsKey(currentId)) {
+                    // increment attention, alert if xyz and conf is changed
+                    updateFeaturePoint(currentId, feature.x, feature.y, feature.z, confidence);
+                    //Log.d(TAG, "Point ID "+ currentId+ " attention = " + allFeaturePoints.get(currentId).get(4));
+                } else { // initialize this point
+                    allFeaturePoints.put(currentId, Arrays.asList(feature.x, feature.y, feature.z, confidence, 0.0f));
+                }
+                //Log.d(TAG, "Total feature points count = "+ allFeaturePoints.size());
+
 
                 // Top point
                 p[0].x = feature.x;
@@ -208,5 +234,29 @@ public class PointCloudNode extends Node {
             Log.i(TAG, "update point cloud");
 
         }
+    }
+
+    private void updateFeaturePoint(Integer id, Float x, Float y, Float z, Float conf) {
+        List<Float> currentPoint = allFeaturePoints.get(id);
+        if (Float.compare(x, currentPoint.get(0)) != 0 ){
+            //Log.d(TAG, "Point id = "+ id + ".x is changed from " + currentPoint.get(0) + " to " +x);
+            currentPoint.set(0,x);
+        }
+        if (Float.compare(y, currentPoint.get(1)) != 0) {
+            //Log.d(TAG, "Point id = "+ id + ".y is changed from " + currentPoint.get(1) + " to " +y);
+            currentPoint.set(1,y);
+        }
+        if (Float.compare(z, currentPoint.get(2)) != 0) {
+            //Log.d(TAG, "Point id = "+ id + ".z is changed from " + currentPoint.get(2) + " to " +z);
+            currentPoint.set(2,z);
+        }
+        if (Float.compare(conf, currentPoint.get(3)) != 0) {
+            //Log.d(TAG, "Point id = "+ id + ".c is changed from " + currentPoint.get(3) + " to " +conf);
+            currentPoint.set(3,conf);
+        }
+        currentPoint.set(4,currentPoint.get(4)+1);
+
+        allFeaturePoints.put(id, currentPoint);
+
     }
 }
