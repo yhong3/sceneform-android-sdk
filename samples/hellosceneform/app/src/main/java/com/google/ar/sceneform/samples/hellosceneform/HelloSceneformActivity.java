@@ -34,11 +34,20 @@ import com.google.ar.core.PointCloud;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.FrameTime;
 import com.google.ar.sceneform.Scene;
+import com.google.ar.sceneform.math.Vector3;
 import com.google.ar.sceneform.rendering.ModelRenderable;
+import com.google.ar.sceneform.rendering.Vertex;
 import com.google.ar.sceneform.ux.ArFragment;
 import com.google.ar.sceneform.ux.TransformableNode;
 
 import com.google.ar.sceneform.samples.hellosceneform.PointCloudNode;
+
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -51,7 +60,10 @@ public class HelloSceneformActivity extends AppCompatActivity {
   private ArFragment arFragment;
   private ModelRenderable andyRenderable;
   private PointCloudNode pointCloudNode;
+  private long timestamp;
 
+    // hold a featurepoint history
+  private Map<Integer, List<Float>> allFeaturePoints = new HashMap<>();
 
     @Override
   @SuppressWarnings({"AndroidApiChecker", "FutureReturnValueIgnored"})
@@ -70,7 +82,7 @@ public class HelloSceneformActivity extends AppCompatActivity {
     Scene scene = arFragment.getArSceneView().getScene();
     scene.addOnUpdateListener(this::onFrame);
 
-        pointCloudNode = new PointCloudNode(this);
+    pointCloudNode = new PointCloudNode(this);
     scene.addChild(pointCloudNode);
 
     // When you build a Renderable, Sceneform loads its resources in the background while returning
@@ -147,5 +159,61 @@ public class HelloSceneformActivity extends AppCompatActivity {
       return false;
     }
     return true;
+  }
+
+  private void updateAllFeaturePoints(PointCloud cloud) {
+      if (this.timestamp != cloud.getTimestamp()) {
+          timestamp = cloud.getTimestamp();
+
+          FloatBuffer floatBuffer = cloud.getPoints();
+          IntBuffer idBuffer = cloud.getIds();
+          // Point clouds are 4 values x,y,z and a confidence value.
+
+          Float confidence = 0.0f;
+          Float attention = 0.0f;
+          Vector3 feature = new Vector3();
+
+          for (int i = 0; i < floatBuffer.limit() / 4; i++) {
+              // feature point
+              feature.x = floatBuffer.get(i * 4);
+              feature.y = floatBuffer.get(i * 4 + 1);
+              feature.z = floatBuffer.get(i * 4 + 2);
+              confidence = floatBuffer.get(i * 4 + 3);
+
+              // process each point into global one
+              Integer currentId = idBuffer.get(i);
+              if (allFeaturePoints.containsKey(currentId)) {
+                  // increment attention, alert if xyz and conf is changed
+                  updateFeaturePoint(currentId, feature.x, feature.y, feature.z, confidence);
+                  //Log.d(TAG, "Point ID "+ currentId+ " attention = " + allFeaturePoints.get(currentId).get(4));
+              } else { // initialize this point
+                  allFeaturePoints.put(currentId, Arrays.asList(feature.x, feature.y, feature.z, confidence, 0.0f));
+              }
+              //Log.d(TAG, "Total feature points count = "+ allFeaturePoints.size());
+          }
+      }
+
+
+  }
+  private void updateFeaturePoint(Integer id, Float x, Float y, Float z, Float conf) {
+      List<Float> currentPoint = allFeaturePoints.get(id);
+      if (Float.compare(x, currentPoint.get(0)) != 0 ){
+          //Log.d(TAG, "Point id = "+ id + ".x is changed from " + currentPoint.get(0) + " to " +x);
+          currentPoint.set(0,x);
+      }
+      if (Float.compare(y, currentPoint.get(1)) != 0) {
+          //Log.d(TAG, "Point id = "+ id + ".y is changed from " + currentPoint.get(1) + " to " +y);
+          currentPoint.set(1,y);
+      }
+      if (Float.compare(z, currentPoint.get(2)) != 0) {
+          //Log.d(TAG, "Point id = "+ id + ".z is changed from " + currentPoint.get(2) + " to " +z);
+          currentPoint.set(2,z);
+      }
+      if (Float.compare(conf, currentPoint.get(3)) != 0) {
+          //Log.d(TAG, "Point id = "+ id + ".c is changed from " + currentPoint.get(3) + " to " +conf);
+          currentPoint.set(3,conf);
+      }
+      currentPoint.set(4,currentPoint.get(4)+1);
+      allFeaturePoints.put(id, currentPoint);
   }
 }
